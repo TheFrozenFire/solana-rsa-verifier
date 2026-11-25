@@ -20,6 +20,10 @@ fn candidate_ids_are_the_spike_instruction_bytes() {
     assert_eq!(CANDIDATES[7].id, 7);
     assert_eq!(CANDIDATES[8].name, "limb32");
     assert_eq!(CANDIDATES[8].id, 8);
+    assert_eq!(CANDIDATES[9].name, "mac");
+    assert_eq!(CANDIDATES[9].id, 9);
+    assert_eq!(CANDIDATES[10].name, "rem32");
+    assert_eq!(CANDIDATES[10].id, 10);
 }
 
 #[test]

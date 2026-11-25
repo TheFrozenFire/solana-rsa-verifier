@@ -36,6 +36,8 @@ pub fn process_instruction(
         6 => time(|out| schoolbook::mul_wide(out, &BENCH_A, &BENCH_B)),
         7 => time_cube(modular::cube_quot),
         8 => time(|out| schoolbook::mul32(out, &BENCH_A, &BENCH_B)),
+        9 => time(|out| schoolbook::mul32_mac(out, &BENCH_A, &BENCH_B)),
+        10 => time_cube(modular::cube_rem32),
         _ => return Err(ProgramError::InvalidInstructionData),
     };
     let mut data = [0u8; 16];

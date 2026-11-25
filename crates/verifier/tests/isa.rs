@@ -22,6 +22,39 @@ fn inlined_product_matches_schoolbook() {
 }
 
 #[test]
+fn unrolled_mac_matches_schoolbook() {
+    let mut got = [0u64; PRODUCT_LIMBS];
+    let mut want = [0u64; PRODUCT_LIMBS];
+    for (a, b) in [
+        ([0; LIMBS], [0; LIMBS]),
+        (BENCH_A, BENCH_B),
+        (BENCH_X, BENCH_N),
+    ] {
+        schoolbook::mul32_mac(&mut got, &a, &b);
+        schoolbook::mul(&mut want, &a, &b);
+        assert_eq!(got, want);
+    }
+}
+
+#[test]
+fn remainder32_cube_matches_schoolbook_cube() {
+    let mut got = [0u64; LIMBS];
+    let mut want = [0u64; LIMBS];
+    for (x0, n0) in [(6u64, 7u64), (10, 7), (100, 7), (0, 9), (4, 5)] {
+        let mut x = [0u64; LIMBS];
+        let mut n = [0u64; LIMBS];
+        x[0] = x0;
+        n[0] = n0;
+        modular::cube_rem32(&mut got, &x, &n);
+        modular::cube(&mut want, &x, &n);
+        assert_eq!(got, want, "{x0} {n0}");
+    }
+    modular::cube_rem32(&mut got, &BENCH_X, &BENCH_N);
+    modular::cube(&mut want, &BENCH_X, &BENCH_N);
+    assert_eq!(got, want);
+}
+
+#[test]
 fn limb32_product_matches_schoolbook() {
     let mut got = [0u64; PRODUCT_LIMBS];
     let mut want = [0u64; PRODUCT_LIMBS];

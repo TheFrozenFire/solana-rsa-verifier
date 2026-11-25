@@ -27,7 +27,7 @@ async fn measures_each_candidate() {
     let mut cube_padded = [0u64; PRODUCT_LIMBS];
     cube_padded[..LIMBS].copy_from_slice(&cube_limbs);
 
-    let mut charged = [0u64; 9];
+    let mut charged = [0u64; 11];
     for candidate in CANDIDATES {
         let transaction = Transaction::new_signed_with_payer(
             &[Instruction {
@@ -55,7 +55,7 @@ async fn measures_each_candidate() {
         let cu = u64::from_le_bytes(return_data[..8].try_into().unwrap());
         let digest = u64::from_le_bytes(return_data[8..].try_into().unwrap());
         let want = match candidate.id {
-            0 | 6 | 8 => schoolbook_digest,
+            0 | 6 | 8 | 9 => schoolbook_digest,
             1 => checksum(&empty),
             _ => checksum(&cube_padded),
         };

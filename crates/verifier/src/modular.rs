@@ -245,6 +245,143 @@ fn shl(words: &mut [u64], bits: u32) {
     }
 }
 
+const DIGIT: u64 = 0xffff_ffff;
+
+/// Schoolbook products, with the remainder's `q * n` multiply done in 32-bit limbs.
+pub fn cube_rem32(out: &mut [u64; LIMBS], x: &[u64; LIMBS], n: &[u64; LIMBS]) {
+    let mut wide = [0u64; PRODUCT_LIMBS];
+    schoolbook::mul(&mut wide, x, x);
+    let square = remainder32(&wide, n);
+    schoolbook::mul(&mut wide, &square, x);
+    *out = remainder32(&wide, n);
+}
+
+fn remainder32(product: &[u64; PRODUCT_LIMBS], modulus: &[u64; LIMBS]) -> [u64; LIMBS] {
+    let mut u = [0u64; 129];
+    let mut v = [0u64; 64];
+    for i in 0..PRODUCT_LIMBS {
+        u[2 * i] = product[i] & DIGIT;
+        u[2 * i + 1] = product[i] >> 32;
+    }
+    for i in 0..LIMBS {
+        v[2 * i] = modulus[i] & DIGIT;
+        v[2 * i + 1] = modulus[i] >> 32;
+    }
+    let nlen = match v.iter().rposition(|digit| *digit != 0) {
+        Some(index) => index + 1,
+        None => return [0; LIMBS],
+    };
+    let shift = (v[nlen - 1] as u32).leading_zeros();
+    shl32(&mut v[..nlen], shift);
+    shl32(&mut u, shift);
+
+    if nlen == 1 {
+        let mut acc = 0u64;
+        for digit in u.iter().rev() {
+            acc = ((acc << 32) | *digit) % v[0];
+        }
+        let mut out = [0u64; LIMBS];
+        out[0] = acc >> shift;
+        return out;
+    }
+
+    let steps = u.len() - nlen;
+    for j in (0..steps).rev() {
+        let top = u[j + nlen];
+        let hi = u[j + nlen - 1];
+        let numer = (top << 32) | hi;
+        let vtop = v[nlen - 1];
+        let mut qhat = numer / vtop;
+        let mut rhat = u128::from(numer % vtop);
+        if qhat > DIGIT {
+            qhat = DIGIT;
+            rhat = u128::from(numer) - u128::from(qhat) * u128::from(vtop);
+        }
+        for _ in 0..2 {
+            if rhat >= (1u128 << 32) {
+                break;
+            }
+            let left = u128::from(qhat) * u128::from(v[nlen - 2]);
+            let right = (rhat << 32) + u128::from(u[j + nlen - 2]);
+            if left <= right {
+                break;
+            }
+            qhat -= 1;
+            rhat += u128::from(vtop);
+        }
+        let window = &mut u[j..j + nlen + 1];
+        if mul_sub32(window, &v[..nlen], qhat) {
+            add_back32(window, &v[..nlen]);
+        }
+    }
+
+    shr32(&mut u[..nlen], shift);
+    let mut out = [0u64; LIMBS];
+    for i in 0..LIMBS {
+        out[i] = u[2 * i] | (u[2 * i + 1] << 32);
+    }
+    out
+}
+
+fn mul_sub32(u: &mut [u64], v: &[u64], q: u64) -> bool {
+    let mut carry = 0u64;
+    for i in 0..v.len() {
+        let prod = q * v[i] + carry;
+        let lo = prod & DIGIT;
+        carry = prod >> 32;
+        if u[i] >= lo {
+            u[i] -= lo;
+        } else {
+            u[i] = (u[i] + (1 << 32)) - lo;
+            carry += 1;
+        }
+    }
+    let last = v.len();
+    if u[last] >= carry {
+        u[last] -= carry;
+        false
+    } else {
+        u[last] = (u[last] + (1 << 32)) - carry;
+        true
+    }
+}
+
+fn add_back32(u: &mut [u64], v: &[u64]) {
+    let mut carry = 0u64;
+    for i in 0..v.len() {
+        let sum = u[i] + v[i] + carry;
+        u[i] = sum & DIGIT;
+        carry = sum >> 32;
+    }
+    let last = v.len();
+    let sum = u[last] + carry;
+    u[last] = sum & DIGIT;
+}
+
+fn shl32(words: &mut [u64], bits: u32) {
+    if bits == 0 {
+        return;
+    }
+    let mut carry = 0u64;
+    for word in words.iter_mut() {
+        let next = *word >> (32 - bits);
+        *word = ((*word << bits) | carry) & DIGIT;
+        carry = next;
+    }
+}
+
+fn shr32(words: &mut [u64], bits: u32) {
+    if bits == 0 {
+        return;
+    }
+    let mut carry = 0u64;
+    for word in words.iter_mut().rev() {
+        let next = (*word << (32 - bits)) & DIGIT;
+        *word = (*word >> bits) | carry;
+        carry = next;
+    }
+}
+
 fn shr(words: &mut [u64], bits: u32) {
     if bits == 0 {
         return;
