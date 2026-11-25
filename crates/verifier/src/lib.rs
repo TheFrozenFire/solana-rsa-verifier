@@ -5,6 +5,8 @@
 //! [`pow3`] takes the same integers as little-endian `u64` limbs.
 #![no_std]
 
+#[doc(hidden)]
+pub mod bench;
 mod mul;
 mod pow;
 

@@ -1,12 +1,15 @@
 use solana_instruction::Instruction;
 use solana_program_test::{ProgramTest, tokio};
 use solana_pubkey::Pubkey;
-use solana_rsa_verifier::{LIMBS, pow3};
+use solana_rsa_verifier::bench::{
+    self, checksum, modexp_1024, modexp_2048, modexp_3072, modexp_4096,
+};
+use solana_rsa_verifier::pow3;
 use solana_signer::Signer;
 use solana_transaction::Transaction;
 
 #[tokio::test]
-async fn measures_pow3() {
+async fn measures_key_sizes_and_exponents() {
     let program_id = Pubkey::new_unique();
     let mut test = ProgramTest::default();
     test.prefer_bpf(true);
@@ -14,55 +17,80 @@ async fn measures_pow3() {
     test.set_compute_max_units(1_400_000);
     let context = test.start_with_context().await;
 
-    let transaction = Transaction::new_signed_with_payer(
-        &[Instruction {
-            program_id,
-            accounts: vec![],
-            data: vec![],
-        }],
-        Some(&context.payer.pubkey()),
-        &[&context.payer],
-        context.last_blockhash,
-    );
-    let result = context
-        .banks_client
-        .process_transaction_with_metadata(transaction)
-        .await
-        .expect("pow3 failed to run");
-    assert!(result.result.is_ok(), "{:?}", result.result);
-    let metadata = result.metadata.expect("transaction metadata");
-    let return_data = metadata.return_data.expect("return data").data;
-    let cu = u64::from_le_bytes(return_data[..8].try_into().unwrap());
-    let digest = u64::from_le_bytes(return_data[8..].try_into().unwrap());
-    let expected = pow3(&bench_base(), &bench_modulus());
-    let want = expected
-        .iter()
-        .enumerate()
-        .fold(0, |acc, (index, limb)| acc ^ limb.rotate_left(index as u32));
-    assert_eq!(digest, want);
-    eprintln!(
-        "pow3: {cu} compute units (transaction consumed {})",
-        metadata.compute_units_consumed
-    );
+    for (size, bits, exponent_code, exponent) in [
+        (0u8, 1024, 0u8, 3u32),
+        (0, 1024, 1, 65537),
+        (1, 2048, 0, 3),
+        (1, 2048, 1, 65537),
+        (2, 3072, 0, 3),
+        (2, 3072, 1, 65537),
+        (3, 4096, 0, 3),
+        (3, 4096, 1, 65537),
+    ] {
+        let label = format!("{bits}-bit e={exponent}");
+        let transaction = Transaction::new_signed_with_payer(
+            &[Instruction {
+                program_id,
+                accounts: vec![],
+                data: vec![size, exponent_code],
+            }],
+            Some(&context.payer.pubkey()),
+            &[&context.payer],
+            context.last_blockhash,
+        );
+        let result = context
+            .banks_client
+            .process_transaction_with_metadata(transaction)
+            .await
+            .unwrap_or_else(|error| panic!("{label} failed to run: {error}"));
+        let Some(metadata) = result.metadata else {
+            panic!("{label} has no metadata");
+        };
+        if let Err(error) = result.result {
+            eprintln!(
+                "{label}: did not finish ({error:?}, transaction consumed {})",
+                metadata.compute_units_consumed
+            );
+            continue;
+        }
+        let return_data = metadata.return_data.expect("return data").data;
+        let cu = u64::from_le_bytes(return_data[..8].try_into().unwrap());
+        let digest = u64::from_le_bytes(return_data[8..].try_into().unwrap());
+        let want = host_digest(bits, exponent);
+        assert_eq!(digest, want, "{label}");
+        eprintln!(
+            "{label}: {cu} compute units (transaction consumed {})",
+            metadata.compute_units_consumed
+        );
+    }
 }
 
-fn bench_modulus() -> [u64; LIMBS] {
-    let mut n = [0u64; LIMBS];
-    for i in 0..LIMBS {
-        n[i] = 0xF0F0_F0F0_F0F0_F0F0 ^ ((i as u64) << 32) ^ (i as u64);
+fn host_digest(bits: u32, exponent: u32) -> u64 {
+    match (bits, exponent) {
+        (1024, exp) => checksum(&modexp_1024(
+            &bench::base::<16>(),
+            &bench::modulus::<16>(),
+            exp,
+        )),
+        (2048, 3) => {
+            let (base, modulus) = bench::bench_2048();
+            checksum(&pow3(&base, &modulus))
+        }
+        (2048, exp) => checksum(&modexp_2048(
+            &bench::base::<32>(),
+            &bench::modulus::<32>(),
+            exp,
+        )),
+        (3072, exp) => checksum(&modexp_3072(
+            &bench::base::<48>(),
+            &bench::modulus::<48>(),
+            exp,
+        )),
+        (4096, exp) => checksum(&modexp_4096(
+            &bench::base::<64>(),
+            &bench::modulus::<64>(),
+            exp,
+        )),
+        _ => panic!("unknown size"),
     }
-    n[0] |= 1;
-    n[LIMBS - 1] |= 1 << 63;
-    n
-}
-
-fn bench_base() -> [u64; LIMBS] {
-    let n = bench_modulus();
-    let mut x = [0u64; LIMBS];
-    for i in 0..LIMBS {
-        x[i] = 0x1234_5678_9ABC_DEF0 ^ n[i].rotate_left(7);
-    }
-    x[LIMBS - 1] = n[LIMBS - 1];
-    x[0] = n[0] - 1;
-    x
 }

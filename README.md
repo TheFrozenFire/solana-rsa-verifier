@@ -23,13 +23,20 @@ verify(&modulus, &signature, &sha256)?;
 
 ## Benchmark
 
-`pow3` of a fixed 2048-bit base and an odd 2048-bit modulus, timed between two `sol_remaining_compute_units` reads in the SVM:
+Each row is a fixed base and an odd modulus of that width, timed between two `sol_remaining_compute_units` reads in the SVM. The 2048-bit exponent-3 row is `pow3`. The other rows use the same remainder and a 32-bit product that reads digits from the `u64` limbs in place. Exponent 65537 is sixteen modular squares and one multiply.
 
-| Operation | Compute units | Median priority fee | 95th percentile |
-| --- | ---: | ---: | ---: |
-| `pow3` | 285,781 | $0.000032 | $0.26 |
+| Modulus | Exponent | Compute units | Median priority fee | 95th percentile |
+| --- | ---: | ---: | ---: | ---: |
+| 1024-bit | 3 | 84,181 | $0.000009 | $0.076 |
+| 1024-bit | 65537 | 716,705 | $0.000080 | $0.65 |
+| 2048-bit | 3 | 285,781 | $0.000032 | $0.26 |
+| 2048-bit | 65537 | exceeds 1,400,000 | | |
+| 3072-bit | 3 | 641,648 | $0.000072 | $0.58 |
+| 3072-bit | 65537 | exceeds 1,400,000 | | |
+| 4096-bit | 3 | 1,107,794 | $0.000124 | $1.00 |
+| 4096-bit | 65537 | exceeds 1,400,000 | | |
 
-The dollar figures use 1,672 micro-lamports per compute unit at the median and 13,500,000 at the 95th percentile, with SOL near $67 on 2026-11-25. The per-signature fee is separate. A full `verify` adds the hash syscall and a comparison of the encoded message. Those are small next to `pow3`.
+The dollar figures use 1,672 micro-lamports per compute unit at the median and 13,500,000 at the 95th percentile, with SOL near $67 on 2026-11-25. The per-signature fee is separate. A row that exceeds 1,400,000 compute units stops at that transaction limit, so it has no completed fee. A full `verify` adds the hash syscall and a comparison of the encoded message. Those are small next to `pow3`. `verify` is 2048-bit with exponent 3.
 
 Reproduce the measurement:
 
