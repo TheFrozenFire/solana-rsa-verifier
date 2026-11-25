@@ -69,8 +69,37 @@ pub fn mul32_mac(out: &mut [u64; PRODUCT_LIMBS], a: &[u64; LIMBS], b: &[u64; LIM
     }
 }
 
+/// One half of a 2048-bit Karatsuba split: 16 limbs in, 32 limbs out.
+pub(crate) fn mul16_mac(out: &mut [u64; 32], a: &[u64], b: &[u64]) {
+    let mut left = [0u64; 32];
+    let mut right = [0u64; 32];
+    for i in 0..16 {
+        left[2 * i] = a[i] & 0xffff_ffff;
+        left[2 * i + 1] = a[i] >> 32;
+        right[2 * i] = b[i] & 0xffff_ffff;
+        right[2 * i + 1] = b[i] >> 32;
+    }
+    let mut digit = [0u64; 64];
+    for i in 0..32 {
+        let ai = left[i];
+        let mut carry = 0u64;
+        let mut j = 0;
+        while j < 32 {
+            carry = mac_digit(&mut digit, i + j, ai, right[j], carry);
+            carry = mac_digit(&mut digit, i + j + 1, ai, right[j + 1], carry);
+            carry = mac_digit(&mut digit, i + j + 2, ai, right[j + 2], carry);
+            carry = mac_digit(&mut digit, i + j + 3, ai, right[j + 3], carry);
+            j += 4;
+        }
+        digit[i + 32] = carry;
+    }
+    for i in 0..32 {
+        out[i] = digit[2 * i] | (digit[2 * i + 1] << 32);
+    }
+}
+
 #[inline(always)]
-fn mac_digit(digit: &mut [u64; 128], index: usize, ai: u64, bj: u64, carry: u64) -> u64 {
+fn mac_digit(digit: &mut [u64], index: usize, ai: u64, bj: u64, carry: u64) -> u64 {
     let sum = digit[index] + ai * bj + carry;
     digit[index] = sum & 0xffff_ffff;
     sum >> 32
@@ -96,7 +125,7 @@ pub fn mul32(out: &mut [u64; PRODUCT_LIMBS], a: &[u64; LIMBS], b: &[u64; LIMBS])
 
 /// Four 32-bit products. The high half never goes through a `u128` multiply.
 #[inline(always)]
-fn widening_mul(a: u64, b: u64) -> (u64, u64) {
+pub(crate) fn widening_mul(a: u64, b: u64) -> (u64, u64) {
     let a0 = a & 0xffff_ffff;
     let a1 = a >> 32;
     let b0 = b & 0xffff_ffff;

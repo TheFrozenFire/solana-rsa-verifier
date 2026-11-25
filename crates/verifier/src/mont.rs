@@ -78,17 +78,17 @@ pub fn cube_square(
     *out = leave(&x3, n, n0);
 }
 
-/// Full product. Two Karatsuba levels, then an 8-limb schoolbook multiply.
+/// One Karatsuba split. Each half is the unrolled 32-bit product.
 pub fn karatsuba(out: &mut [u64; PRODUCT_LIMBS], a: &[u64; LIMBS], b: &[u64; LIMBS]) {
     let mut low = [0u64; 32];
     let mut high = [0u64; 32];
-    mul16(&mut low, &a[..16], &b[..16]);
-    mul16(&mut high, &a[16..], &b[16..]);
+    schoolbook::mul16_mac(&mut low, &a[..16], &b[..16]);
+    schoolbook::mul16_mac(&mut high, &a[16..], &b[16..]);
     let (a_sum, a_carry) = add_from(&a[..16], &a[16..]);
     let (b_sum, b_carry) = add_from(&b[..16], &b[16..]);
     let mut mid = [0u64; 34];
     let mut mid_low = [0u64; 32];
-    mul16(&mut mid_low, &a_sum, &b_sum);
+    schoolbook::mul16_mac(&mut mid_low, &a_sum, &b_sum);
     mid[..32].copy_from_slice(&mid_low);
     if a_carry == 1 {
         add_at(&mut mid, &b_sum, 16);
@@ -160,9 +160,13 @@ fn reduce(product: &[u64; PRODUCT_LIMBS], n: &[u64; LIMBS], n0: u64) -> [u64; LI
         let m = t[i].wrapping_mul(n0);
         let mut carry = 0u128;
         for j in 0..LIMBS {
-            let sum = u128::from(t[i + j]) + u128::from(m) * u128::from(n[j]) + carry;
-            t[i + j] = sum as u64;
-            carry = sum >> 64;
+            let (lo, hi) = schoolbook::widening_mul(m, n[j]);
+            let (sum_lo, carry_bit) = lo.overflowing_add(t[i + j]);
+            let (sum_lo, carry_bit_2) = sum_lo.overflowing_add(carry as u64);
+            let (sum_hi, hi_bit) =
+                hi.overflowing_add(u64::from(carry_bit) + u64::from(carry_bit_2));
+            t[i + j] = sum_lo;
+            carry = u128::from(sum_hi) + (u128::from(hi_bit) << 64) + (carry >> 64);
         }
         let mut k = i + LIMBS;
         while carry != 0 {
@@ -223,52 +227,6 @@ fn cios(out: &mut [u64; LIMBS], a: &[u64; LIMBS], b: &[u64; LIMBS], n: &[u64; LI
     }
     if hi != 0 || at_least(out, n) {
         sub(out, n);
-    }
-}
-
-fn mul16(out: &mut [u64; 32], a: &[u64], b: &[u64]) {
-    let mut low = [0u64; 16];
-    let mut high = [0u64; 16];
-    mul8(&mut low, &a[..8], &b[..8]);
-    mul8(&mut high, &a[8..], &b[8..]);
-    let (a_sum, a_carry) = add_from(&a[..8], &a[8..]);
-    let (b_sum, b_carry) = add_from(&b[..8], &b[8..]);
-    let mut mid = [0u64; 18];
-    let mut mid_low = [0u64; 16];
-    mul8(&mut mid_low, &a_sum[..8], &b_sum[..8]);
-    mid[..16].copy_from_slice(&mid_low);
-    if a_carry == 1 {
-        add_at(&mut mid, &b_sum[..8], 8);
-    }
-    if b_carry == 1 {
-        add_at(&mut mid, &a_sum[..8], 8);
-    }
-    if a_carry == 1 && b_carry == 1 {
-        add_at(&mut mid, &[1], 16);
-    }
-    sub_from(&mut mid, &low);
-    sub_from(&mut mid, &high);
-    out[..16].copy_from_slice(&low);
-    out[16..].copy_from_slice(&high);
-    add_at(out, &mid, 8);
-}
-
-fn mul8(out: &mut [u64; 16], a: &[u64], b: &[u64]) {
-    *out = [0; 16];
-    for i in 0..8 {
-        let mut carry = 0u128;
-        for j in 0..8 {
-            let product = u128::from(a[i]) * u128::from(b[j]);
-            let lo = product as u64;
-            let hi = (product >> 64) as u64;
-            let (sum_lo, carry_bit) = lo.overflowing_add(out[i + j]);
-            let (sum_lo, carry_bit_2) = sum_lo.overflowing_add(carry as u64);
-            let (sum_hi, hi_bit) =
-                hi.overflowing_add(u64::from(carry_bit) + u64::from(carry_bit_2));
-            out[i + j] = sum_lo;
-            carry = u128::from(sum_hi) + (u128::from(hi_bit) << 64) + (carry >> 64);
-        }
-        add_u128(out, i + 8, carry);
     }
 }
 
