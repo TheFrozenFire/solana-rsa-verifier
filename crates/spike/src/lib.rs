@@ -10,7 +10,9 @@ use solana_program::{
     entrypoint::ProgramResult, program::set_return_data, program_error::ProgramError,
     pubkey::Pubkey,
 };
-use verifier::{BENCH_A, BENCH_B, PRODUCT_LIMBS, noop, schoolbook};
+use verifier::{
+    BENCH_A, BENCH_B, BENCH_N, BENCH_X, LIMBS, PRODUCT_LIMBS, modular, noop, schoolbook,
+};
 
 entrypoint!(process_instruction);
 
@@ -26,6 +28,11 @@ pub fn process_instruction(
     let (charged, digest) = match id {
         0 => time(|out| schoolbook::mul(out, &BENCH_A, &BENCH_B)),
         1 => time(|out| noop(out, &BENCH_A, &BENCH_B)),
+        2 => time(|out| {
+            let mut reduced = [0u64; LIMBS];
+            modular::cube(&mut reduced, &BENCH_X, &BENCH_N);
+            out[..LIMBS].copy_from_slice(&reduced);
+        }),
         _ => return Err(ProgramError::InvalidInstructionData),
     };
     let mut data = [0u8; 16];
