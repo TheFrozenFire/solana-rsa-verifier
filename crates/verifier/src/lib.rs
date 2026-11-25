@@ -1,144 +1,87 @@
-//! On-chain RSA signature verification for Solana programs.
+//! RSA-2048 signature verification for Solana programs.
 //!
-//! Multiplication candidates share one shape so the spike can time them
-//! against the same 2048-bit inputs. Limbs are little-endian `u64` words.
+//! The public exponent is 3. A signature is a 256-byte integer, and the
+//! modulus is a 256-byte integer. Both are big-endian, as in PKCS#1.
+//! [`pow3`] takes the same integers as little-endian `u64` limbs.
 #![no_std]
 
-pub mod modular;
-pub mod mont;
-pub mod schoolbook;
+mod mul;
+mod pow;
 
-pub use schoolbook::{LIMBS, PRODUCT_LIMBS};
+pub const LIMBS: usize = 32;
+pub const MODULUS_BYTES: usize = 256;
 
-/// One timed operation. `id` is the spike instruction's first byte.
-pub struct Candidate {
-    pub name: &'static str,
-    pub id: u8,
-}
-
-pub const CANDIDATES: &[Candidate] = &[
-    Candidate {
-        name: "schoolbook",
-        id: 0,
-    },
-    Candidate {
-        name: "noop",
-        id: 1,
-    },
-    Candidate {
-        name: "cube",
-        id: 2,
-    },
-    Candidate {
-        name: "cios",
-        id: 3,
-    },
-    Candidate {
-        name: "karatsuba",
-        id: 4,
-    },
-    Candidate {
-        name: "square",
-        id: 5,
-    },
-    Candidate {
-        name: "wide",
-        id: 6,
-    },
-    Candidate {
-        name: "quot",
-        id: 7,
-    },
-    Candidate {
-        name: "limb32",
-        id: 8,
-    },
-    Candidate { name: "mac", id: 9 },
-    Candidate {
-        name: "rem32",
-        id: 10,
-    },
+/// SHA-256 DigestInfo prefix from RFC 8017.
+pub const SHA256_DIGESTINFO: [u8; 19] = [
+    0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
+    0x00, 0x04, 0x20,
 ];
 
-/// 2048-bit all-ones operands. The product is fixed, so each candidate is timed
-/// on the same work.
-pub const BENCH_A: [u64; LIMBS] = [u64::MAX; LIMBS];
-pub const BENCH_B: [u64; LIMBS] = [u64::MAX; LIMBS];
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Error {
+    /// The modulus is even or zero.
+    Modulus,
+    /// The signature is zero or is not strictly less than the modulus.
+    Representative,
+    /// The encoded message is not PKCS#1 v1.5 with SHA-256.
+    Padding,
+}
 
-/// Full-width base and modulus for `x^3 mod n`. `BENCH_N` is odd and its
-/// top bit is set. `BENCH_X` keeps that top limb, so it is 2048 bits as well.
-pub const BENCH_N: [u64; LIMBS] = bench_modulus();
-pub const BENCH_X: [u64; LIMBS] = bench_base();
-pub const BENCH_N0: u64 = mont::n_prime(BENCH_N[0]);
+/// `base.pow(3) % modulus`.
+///
+/// Limbs are little-endian. `modulus` is nonzero. A zero modulus yields zero.
+pub fn pow3(base: &[u64; LIMBS], modulus: &[u64; LIMBS]) -> [u64; LIMBS] {
+    pow::pow3(base, modulus)
+}
 
-/// `2^4096 mod BENCH_N`.
-pub const BENCH_RR: [u64; LIMBS] = [
-    9080094901108508550,
-    1473061867638795321,
-    15318180814900901642,
-    16154696778292119225,
-    17537455368449395242,
-    1644730675064421190,
-    14376695302646295909,
-    6170904032705790116,
-    15609744607374706347,
-    16426473061858625191,
-    14481795701340567402,
-    15917674933707548297,
-    15178971050070957803,
-    3261865218163396876,
-    10204014066213191846,
-    164910636092807123,
-    10822884400084898774,
-    12728186567416858392,
-    2626220129079101011,
-    5378031926482962867,
-    4152132873373513487,
-    16939457789885343731,
-    12872186405925892223,
-    16962235178237235961,
-    5334813383414303154,
-    17253112838718901013,
-    12755711026206775927,
-    17866575160127405471,
-    18403508619166229035,
-    8370687535180452901,
-    2264716289698633902,
-    8416699609164770616,
-];
-
-const fn bench_modulus() -> [u64; LIMBS] {
-    let mut n = [0u64; LIMBS];
-    let mut i = 0;
-    while i < LIMBS {
-        n[i] = 0xF0F0_F0F0_F0F0_F0F0 ^ ((i as u64) << 32) ^ (i as u64);
-        i += 1;
+/// Verify a PKCS#1 v1.5 SHA-256 signature with public exponent 3.
+///
+/// `sha256` is the 32-byte hash of the message. On Solana, hash with the
+/// `sol_sha256` syscall.
+pub fn verify(
+    modulus: &[u8; MODULUS_BYTES],
+    signature: &[u8; MODULUS_BYTES],
+    sha256: &[u8; 32],
+) -> Result<(), Error> {
+    if modulus[255] & 1 == 0 {
+        return Err(Error::Modulus);
     }
-    n[0] |= 1;
-    n[LIMBS - 1] |= 1 << 63;
-    n
-}
-
-const fn bench_base() -> [u64; LIMBS] {
-    let n = bench_modulus();
-    let mut x = [0u64; LIMBS];
-    let mut i = 0;
-    while i < LIMBS {
-        x[i] = 0x1234_5678_9ABC_DEF0 ^ n[i].rotate_left(7);
-        i += 1;
+    if signature == &[0; MODULUS_BYTES] || signature >= modulus {
+        return Err(Error::Representative);
     }
-    x[LIMBS - 1] = n[LIMBS - 1];
-    x[0] = n[0] - 1;
-    x
+    let encoded = pow3(&from_be_bytes(signature), &from_be_bytes(modulus));
+    if pkcs1_sha256(&to_be_bytes(&encoded), sha256) {
+        Ok(())
+    } else {
+        Err(Error::Padding)
+    }
 }
 
-pub fn noop(out: &mut [u64; PRODUCT_LIMBS], _a: &[u64; LIMBS], _b: &[u64; LIMBS]) {
-    *out = [0; PRODUCT_LIMBS];
+fn pkcs1_sha256(encoded: &[u8; MODULUS_BYTES], sha256: &[u8; 32]) -> bool {
+    encoded[0] == 0x00
+        && encoded[1] == 0x01
+        && encoded[2..204].iter().all(|byte| *byte == 0xff)
+        && encoded[204] == 0x00
+        && encoded[205..224] == SHA256_DIGESTINFO
+        && encoded[224..] == *sha256
 }
 
-pub fn checksum(limbs: &[u64]) -> u64 {
+pub fn from_be_bytes(bytes: &[u8; MODULUS_BYTES]) -> [u64; LIMBS] {
+    let mut limbs = [0u64; LIMBS];
+    for i in 0..LIMBS {
+        let start = MODULUS_BYTES - (i + 1) * 8;
+        let mut word = [0u8; 8];
+        word.copy_from_slice(&bytes[start..start + 8]);
+        limbs[i] = u64::from_be_bytes(word);
+    }
     limbs
-        .iter()
-        .enumerate()
-        .fold(0, |acc, (index, limb)| acc ^ limb.rotate_left(index as u32))
+}
+
+pub fn to_be_bytes(limbs: &[u64; LIMBS]) -> [u8; MODULUS_BYTES] {
+    let mut bytes = [0u8; MODULUS_BYTES];
+    for i in 0..LIMBS {
+        let start = MODULUS_BYTES - (i + 1) * 8;
+        bytes[start..start + 8].copy_from_slice(&limbs[i].to_be_bytes());
+    }
+    bytes
 }

@@ -1,0 +1,191 @@
+//! `base^3 mod modulus` for 2048-bit integers.
+//!
+//! The product is the unrolled 32-bit multiply. Each remainder takes its
+//! quotient digits from a 128-by-64 division built out of `u64` division.
+
+use crate::{LIMBS, mul};
+
+const PRODUCT_LIMBS: usize = LIMBS * 2;
+
+pub fn pow3(base: &[u64; LIMBS], modulus: &[u64; LIMBS]) -> [u64; LIMBS] {
+    let mut wide = [0u64; PRODUCT_LIMBS];
+    mul::product(&mut wide, base, base);
+    let square = remainder(&wide, modulus);
+    mul::product(&mut wide, &square, base);
+    remainder(&wide, modulus)
+}
+
+fn remainder(product: &[u64; PRODUCT_LIMBS], modulus: &[u64; LIMBS]) -> [u64; LIMBS] {
+    let n = match significant_limbs(modulus) {
+        0 => return [0; LIMBS],
+        n => n,
+    };
+    let shift = modulus[n - 1].leading_zeros();
+    let mut v = [0u64; LIMBS];
+    v[..n].copy_from_slice(&modulus[..n]);
+    let mut u = [0u64; PRODUCT_LIMBS + 1];
+    u[..PRODUCT_LIMBS].copy_from_slice(product);
+    shl(&mut v[..n], shift);
+    shl(&mut u, shift);
+
+    if n == 1 {
+        return rem_limb(&u, v[0], shift);
+    }
+
+    let steps = u.len() - n;
+    for j in (0..steps).rev() {
+        let top = u[j + n];
+        let hi = u[j + n - 1];
+        let (mut qhat, mut rhat) = if top == v[n - 1] {
+            (u64::MAX, u128::from(hi) + u128::from(v[n - 1]))
+        } else {
+            let (q, r) = div_rem_128_64(top, hi, v[n - 1]);
+            (q, u128::from(r))
+        };
+        while rhat < (1u128 << 64)
+            && u128::from(qhat) * u128::from(v[n - 2]) > (rhat << 64) | u128::from(u[j + n - 2])
+        {
+            qhat -= 1;
+            rhat += u128::from(v[n - 1]);
+        }
+        let window = &mut u[j..j + n + 1];
+        if mul_sub(window, &v[..n], qhat) {
+            add_back(window, &v[..n]);
+        }
+    }
+
+    let mut out = [0u64; LIMBS];
+    out[..n].copy_from_slice(&u[..n]);
+    shr(&mut out, shift);
+    out
+}
+
+fn div_rem_128_64(hi: u64, lo: u64, d: u64) -> (u64, u64) {
+    if hi == 0 {
+        return (lo / d, lo % d);
+    }
+    let shift = d.leading_zeros();
+    let v = d << shift;
+    let vn1 = v >> 32;
+    let vn0 = v & 0xffff_ffff;
+    let u_hi = if shift == 0 {
+        hi
+    } else {
+        (hi << shift) | (lo >> (64 - shift))
+    };
+    let u_lo = lo << shift;
+    let u_mid = u_lo >> 32;
+    let u_bot = u_lo & 0xffff_ffff;
+    let (q1, step) = quot_digit(u_hi, u_mid, vn1, vn0, v);
+    let (q0, rem) = quot_digit(step, u_bot, vn1, vn0, v);
+    ((q1 << 32) | q0, rem >> shift)
+}
+
+fn quot_digit(top: u64, low: u64, vn1: u64, vn0: u64, v: u64) -> (u64, u64) {
+    let base = 1u64 << 32;
+    let q_raw = top / vn1;
+    let r_raw = top % vn1;
+    let (mut q, mut rhat) = if q_raw >= base {
+        let adjusted = u128::from(top) - u128::from(base - 1) * u128::from(vn1);
+        (base - 1, adjusted as u64)
+    } else {
+        (q_raw, r_raw)
+    };
+    if rhat < base {
+        while u128::from(q) * u128::from(vn0) > (u128::from(rhat) << 32) + u128::from(low) {
+            q -= 1;
+            rhat += vn1;
+            if rhat >= base {
+                break;
+            }
+        }
+    }
+    let value = (u128::from(top) << 32) | u128::from(low);
+    let mut prod = u128::from(q) * u128::from(v);
+    if prod > value {
+        q -= 1;
+        prod -= u128::from(v);
+    }
+    if prod > value {
+        q -= 1;
+        prod -= u128::from(v);
+    }
+    (q, (value - prod) as u64)
+}
+
+fn rem_limb(u: &[u64], divisor: u64, shift: u32) -> [u64; LIMBS] {
+    let mut acc = 0u64;
+    for limb in u.iter().rev() {
+        acc = div_rem_128_64(acc, *limb, divisor).1;
+    }
+    let mut out = [0u64; LIMBS];
+    out[0] = acc;
+    shr(&mut out, shift);
+    out
+}
+
+fn significant_limbs(value: &[u64; LIMBS]) -> usize {
+    value
+        .iter()
+        .rposition(|limb| *limb != 0)
+        .map(|index| index + 1)
+        .unwrap_or(0)
+}
+
+fn mul_sub(u: &mut [u64], v: &[u64], q: u64) -> bool {
+    let n = v.len();
+    let mut carry = 0u128;
+    for i in 0..n {
+        let prod = u128::from(q) * u128::from(v[i]) + carry;
+        carry = prod >> 64;
+        let (diff, borrowed) = u[i].overflowing_sub(prod as u64);
+        u[i] = diff;
+        if borrowed {
+            carry += 1;
+        }
+    }
+    let top = u128::from(u[n]);
+    if carry <= top {
+        u[n] = (top - carry) as u64;
+        false
+    } else {
+        u[n] = (top + (1u128 << 64) - carry) as u64;
+        true
+    }
+}
+
+fn add_back(u: &mut [u64], v: &[u64]) {
+    let mut carry = 0u64;
+    for i in 0..v.len() {
+        let (sum, c1) = u[i].overflowing_add(v[i]);
+        let (sum, c2) = sum.overflowing_add(carry);
+        u[i] = sum;
+        carry = u64::from(c1) + u64::from(c2);
+    }
+    let last = v.len();
+    u[last] = u[last].wrapping_add(carry);
+}
+
+fn shl(words: &mut [u64], bits: u32) {
+    if bits == 0 {
+        return;
+    }
+    let mut carry = 0u64;
+    for word in words.iter_mut() {
+        let next = *word >> (64 - bits);
+        *word = (*word << bits) | carry;
+        carry = next;
+    }
+}
+
+fn shr(words: &mut [u64], bits: u32) {
+    if bits == 0 {
+        return;
+    }
+    let mut carry = 0u64;
+    for word in words.iter_mut().rev() {
+        let next = *word << (64 - bits);
+        *word = (*word >> bits) | carry;
+        carry = next;
+    }
+}
