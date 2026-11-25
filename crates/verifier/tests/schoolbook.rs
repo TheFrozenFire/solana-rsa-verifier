@@ -14,6 +14,12 @@ fn candidate_ids_are_the_spike_instruction_bytes() {
     assert_eq!(CANDIDATES[4].id, 4);
     assert_eq!(CANDIDATES[5].name, "square");
     assert_eq!(CANDIDATES[5].id, 5);
+    assert_eq!(CANDIDATES[6].name, "wide");
+    assert_eq!(CANDIDATES[6].id, 6);
+    assert_eq!(CANDIDATES[7].name, "quot");
+    assert_eq!(CANDIDATES[7].id, 7);
+    assert_eq!(CANDIDATES[8].name, "limb32");
+    assert_eq!(CANDIDATES[8].id, 8);
 }
 
 #[test]

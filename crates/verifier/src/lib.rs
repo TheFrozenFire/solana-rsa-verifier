@@ -41,6 +41,18 @@ pub const CANDIDATES: &[Candidate] = &[
         name: "square",
         id: 5,
     },
+    Candidate {
+        name: "wide",
+        id: 6,
+    },
+    Candidate {
+        name: "quot",
+        id: 7,
+    },
+    Candidate {
+        name: "limb32",
+        id: 8,
+    },
 ];
 
 /// 2048-bit all-ones operands. The product is fixed, so each candidate is timed

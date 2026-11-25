@@ -33,6 +33,9 @@ pub fn process_instruction(
         3 => time_cube(|out, x, n| mont::cube_cios(out, x, n, &BENCH_RR, BENCH_N0)),
         4 => time_cube(|out, x, n| mont::cube_karatsuba(out, x, n, &BENCH_RR, BENCH_N0)),
         5 => time_cube(|out, x, n| mont::cube_square(out, x, n, &BENCH_RR, BENCH_N0)),
+        6 => time(|out| schoolbook::mul_wide(out, &BENCH_A, &BENCH_B)),
+        7 => time_cube(modular::cube_quot),
+        8 => time(|out| schoolbook::mul32(out, &BENCH_A, &BENCH_B)),
         _ => return Err(ProgramError::InvalidInstructionData),
     };
     let mut data = [0u8; 16];
