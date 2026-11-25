@@ -11,7 +11,8 @@ use solana_program::{
     pubkey::Pubkey,
 };
 use verifier::{
-    BENCH_A, BENCH_B, BENCH_N, BENCH_X, LIMBS, PRODUCT_LIMBS, modular, noop, schoolbook,
+    BENCH_A, BENCH_B, BENCH_N, BENCH_N0, BENCH_RR, BENCH_X, LIMBS, PRODUCT_LIMBS, modular, mont,
+    noop, schoolbook,
 };
 
 entrypoint!(process_instruction);
@@ -28,11 +29,10 @@ pub fn process_instruction(
     let (charged, digest) = match id {
         0 => time(|out| schoolbook::mul(out, &BENCH_A, &BENCH_B)),
         1 => time(|out| noop(out, &BENCH_A, &BENCH_B)),
-        2 => time(|out| {
-            let mut reduced = [0u64; LIMBS];
-            modular::cube(&mut reduced, &BENCH_X, &BENCH_N);
-            out[..LIMBS].copy_from_slice(&reduced);
-        }),
+        2 => time_cube(modular::cube),
+        3 => time_cube(|out, x, n| mont::cube_cios(out, x, n, &BENCH_RR, BENCH_N0)),
+        4 => time_cube(|out, x, n| mont::cube_karatsuba(out, x, n, &BENCH_RR, BENCH_N0)),
+        5 => time_cube(|out, x, n| mont::cube_square(out, x, n, &BENCH_RR, BENCH_N0)),
         _ => return Err(ProgramError::InvalidInstructionData),
     };
     let mut data = [0u8; 16];
@@ -40,6 +40,14 @@ pub fn process_instruction(
     data[8..].copy_from_slice(&digest.to_le_bytes());
     set_return_data(&data);
     Ok(())
+}
+
+fn time_cube(op: impl FnOnce(&mut [u64; LIMBS], &[u64; LIMBS], &[u64; LIMBS])) -> (u64, u64) {
+    time(|out| {
+        let mut reduced = [0u64; LIMBS];
+        op(&mut reduced, &BENCH_X, &BENCH_N);
+        out[..LIMBS].copy_from_slice(&reduced);
+    })
 }
 
 fn time(op: impl FnOnce(&mut [u64; PRODUCT_LIMBS])) -> (u64, u64) {

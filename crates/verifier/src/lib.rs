@@ -5,6 +5,7 @@
 #![no_std]
 
 pub mod modular;
+pub mod mont;
 pub mod schoolbook;
 
 pub use schoolbook::{LIMBS, PRODUCT_LIMBS};
@@ -28,6 +29,18 @@ pub const CANDIDATES: &[Candidate] = &[
         name: "cube",
         id: 2,
     },
+    Candidate {
+        name: "cios",
+        id: 3,
+    },
+    Candidate {
+        name: "karatsuba",
+        id: 4,
+    },
+    Candidate {
+        name: "square",
+        id: 5,
+    },
 ];
 
 /// 2048-bit all-ones operands. The product is fixed, so each candidate is timed
@@ -39,6 +52,43 @@ pub const BENCH_B: [u64; LIMBS] = [u64::MAX; LIMBS];
 /// top bit is set. `BENCH_X` keeps that top limb, so it is 2048 bits as well.
 pub const BENCH_N: [u64; LIMBS] = bench_modulus();
 pub const BENCH_X: [u64; LIMBS] = bench_base();
+pub const BENCH_N0: u64 = mont::n_prime(BENCH_N[0]);
+
+/// `2^4096 mod BENCH_N`.
+pub const BENCH_RR: [u64; LIMBS] = [
+    9080094901108508550,
+    1473061867638795321,
+    15318180814900901642,
+    16154696778292119225,
+    17537455368449395242,
+    1644730675064421190,
+    14376695302646295909,
+    6170904032705790116,
+    15609744607374706347,
+    16426473061858625191,
+    14481795701340567402,
+    15917674933707548297,
+    15178971050070957803,
+    3261865218163396876,
+    10204014066213191846,
+    164910636092807123,
+    10822884400084898774,
+    12728186567416858392,
+    2626220129079101011,
+    5378031926482962867,
+    4152132873373513487,
+    16939457789885343731,
+    12872186405925892223,
+    16962235178237235961,
+    5334813383414303154,
+    17253112838718901013,
+    12755711026206775927,
+    17866575160127405471,
+    18403508619166229035,
+    8370687535180452901,
+    2264716289698633902,
+    8416699609164770616,
+];
 
 const fn bench_modulus() -> [u64; LIMBS] {
     let mut n = [0u64; LIMBS];

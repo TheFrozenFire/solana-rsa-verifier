@@ -8,6 +8,12 @@ fn candidate_ids_are_the_spike_instruction_bytes() {
     assert_eq!(CANDIDATES[1].id, 1);
     assert_eq!(CANDIDATES[2].name, "cube");
     assert_eq!(CANDIDATES[2].id, 2);
+    assert_eq!(CANDIDATES[3].name, "cios");
+    assert_eq!(CANDIDATES[3].id, 3);
+    assert_eq!(CANDIDATES[4].name, "karatsuba");
+    assert_eq!(CANDIDATES[4].id, 4);
+    assert_eq!(CANDIDATES[5].name, "square");
+    assert_eq!(CANDIDATES[5].id, 5);
 }
 
 #[test]
