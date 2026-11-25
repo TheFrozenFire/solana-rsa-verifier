@@ -137,7 +137,7 @@ pub fn square(out: &mut [u64; PRODUCT_LIMBS], a: &[u64; LIMBS]) {
 
 fn enter(x: &[u64; LIMBS], n: &[u64; LIMBS], rr: &[u64; LIMBS], n0: u64) -> [u64; LIMBS] {
     let mut wide = [0u64; PRODUCT_LIMBS];
-    schoolbook::mul(&mut wide, x, rr);
+    schoolbook::mul32_mac(&mut wide, x, rr);
     reduce(&wide, n, n0)
 }
 

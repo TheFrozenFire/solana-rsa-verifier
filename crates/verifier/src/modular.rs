@@ -1,24 +1,24 @@
 //! `x^3 mod n` for 2048-bit integers.
 //!
-//! `n` is nonzero. Each product is a schoolbook multiply, and the remainder is
-//! schoolbook division.
+//! `n` is nonzero. Each full-width product is the unrolled 32-bit multiply.
+//! The remainder is schoolbook division.
 
 use crate::schoolbook::{self, LIMBS, PRODUCT_LIMBS};
 
 pub fn cube(out: &mut [u64; LIMBS], x: &[u64; LIMBS], n: &[u64; LIMBS]) {
     let mut wide = [0u64; PRODUCT_LIMBS];
-    schoolbook::mul(&mut wide, x, x);
+    schoolbook::mul32_mac(&mut wide, x, x);
     let square = remainder(&wide, n);
-    schoolbook::mul(&mut wide, &square, x);
+    schoolbook::mul32_mac(&mut wide, &square, x);
     *out = remainder(&wide, n);
 }
 
 /// Same cube, but each quotient digit is a 128÷64 division built from `u64` division.
 pub fn cube_quot(out: &mut [u64; LIMBS], x: &[u64; LIMBS], n: &[u64; LIMBS]) {
     let mut wide = [0u64; PRODUCT_LIMBS];
-    schoolbook::mul(&mut wide, x, x);
+    schoolbook::mul32_mac(&mut wide, x, x);
     let square = remainder_quot(&wide, n);
-    schoolbook::mul(&mut wide, &square, x);
+    schoolbook::mul32_mac(&mut wide, &square, x);
     *out = remainder_quot(&wide, n);
 }
 
@@ -247,12 +247,12 @@ fn shl(words: &mut [u64], bits: u32) {
 
 const DIGIT: u64 = 0xffff_ffff;
 
-/// Schoolbook products, with the remainder's `q * n` multiply done in 32-bit limbs.
+/// Unrolled 32-bit products, with the remainder's `q * n` multiply done in 32-bit limbs.
 pub fn cube_rem32(out: &mut [u64; LIMBS], x: &[u64; LIMBS], n: &[u64; LIMBS]) {
     let mut wide = [0u64; PRODUCT_LIMBS];
-    schoolbook::mul(&mut wide, x, x);
+    schoolbook::mul32_mac(&mut wide, x, x);
     let square = remainder32(&wide, n);
-    schoolbook::mul(&mut wide, &square, x);
+    schoolbook::mul32_mac(&mut wide, &square, x);
     *out = remainder32(&wide, n);
 }
 
