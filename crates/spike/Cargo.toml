@@ -1,0 +1,25 @@
+[package]
+name = "spike"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+solana-program = { version = "6.0.0", default-features = false }
+verifier = { path = "../verifier" }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(target_os, values("solana"))',
+    'cfg(feature, values("custom-heap", "custom-panic"))',
+] }
+
+[dev-dependencies]
+solana-instruction = "4"
+solana-program-test = { version = "=5.0.0-alpha.1", features = ["agave-unstable-api"] }
+solana-pubkey = "4"
+solana-signer = "4"
+solana-transaction = "6"
+verifier = { path = "../verifier" }
