@@ -1,3 +1,6 @@
+#[path = "data/samples.rs"]
+mod samples;
+
 use solana_instruction::Instruction;
 use solana_program_test::{ProgramTest, tokio};
 use solana_pubkey::Pubkey;
@@ -63,6 +66,90 @@ async fn measures_key_sizes_and_exponents() {
             metadata.compute_units_consumed
         );
     }
+
+    for (label, opcode, modulus, signature, digest) in [
+        (
+            "2048-bit PKCS#1 v1.5 SHA-256 verify",
+            0x10,
+            samples::MODULUS_2048,
+            samples::N2048_SHA256_SIGNATURE,
+            samples::N2048_SHA256_DIGEST,
+        ),
+        (
+            "2048-bit PSS verify",
+            0x11,
+            samples::MODULUS_2048,
+            samples::PSS_2048_SIGNATURE,
+            samples::PSS_2048_DIGEST,
+        ),
+        (
+            "3072-bit PKCS#1 v1.5 SHA-256 verify",
+            0x10,
+            samples::MODULUS_3072,
+            samples::N3072_SHA256_SIGNATURE,
+            samples::N3072_SHA256_DIGEST,
+        ),
+        (
+            "3072-bit PSS verify",
+            0x11,
+            samples::MODULUS_3072,
+            samples::PSS_3072_SIGNATURE,
+            samples::PSS_3072_DIGEST,
+        ),
+        (
+            "4096-bit PKCS#1 v1.5 SHA-256 verify",
+            0x10,
+            samples::MODULUS_4096,
+            samples::N4096_SHA256_SIGNATURE,
+            samples::N4096_SHA256_DIGEST,
+        ),
+        (
+            "4096-bit PSS verify",
+            0x11,
+            samples::MODULUS_4096,
+            samples::PSS_4096_SIGNATURE,
+            samples::PSS_4096_DIGEST,
+        ),
+    ] {
+        let mut data = vec![opcode];
+        data.extend(decode(modulus));
+        data.extend(decode(signature));
+        data.extend(decode(digest));
+        let transaction = Transaction::new_signed_with_payer(
+            &[Instruction {
+                program_id,
+                accounts: vec![],
+                data,
+            }],
+            Some(&context.payer.pubkey()),
+            &[&context.payer],
+            context.last_blockhash,
+        );
+        let result = context
+            .banks_client
+            .process_transaction_with_metadata(transaction)
+            .await
+            .unwrap_or_else(|error| panic!("{label} failed to run: {error}"));
+        let metadata = result.metadata.expect("metadata");
+        result
+            .result
+            .unwrap_or_else(|error| panic!("{label} failed: {error:?}"));
+        let return_data = metadata.return_data.expect("return data").data;
+        let cu = u64::from_le_bytes(return_data[..8].try_into().unwrap());
+        let ok = u64::from_le_bytes(return_data[8..].try_into().unwrap());
+        assert_eq!(ok, 1, "{label}");
+        eprintln!(
+            "{label}: {cu} compute units (transaction consumed {})",
+            metadata.compute_units_consumed
+        );
+    }
+}
+
+fn decode(text: &str) -> Vec<u8> {
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap())
+        .collect()
 }
 
 fn host_digest(bits: u32, exponent: u32) -> u64 {

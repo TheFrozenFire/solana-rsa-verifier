@@ -34,6 +34,15 @@ fn rejects_a_representative_outside_the_modulus() {
 }
 
 #[test]
+fn rejects_a_modulus_whose_top_bit_is_clear() {
+    let mut modulus = hex(MODULUS);
+    modulus[0] &= !0x80;
+    let signature = hex(SIGNATURE);
+    let hash = hex32(HASH);
+    assert_eq!(verify(&modulus, &signature, &hash), Err(Error::Modulus));
+}
+
+#[test]
 fn rejects_an_even_modulus() {
     let mut modulus = hex(MODULUS);
     modulus[255] &= !1;

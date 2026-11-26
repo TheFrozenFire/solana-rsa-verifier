@@ -2,7 +2,7 @@
 name = "solana-rsa-verifier"
 version = "0.1.0"
 edition = "2024"
-description = "RSA-2048 signature verification for Solana programs, public exponent 3"
+description = "RSA signature verification for Solana programs, public exponent 3"
 repository = "https://github.com/TheFrozenFire/solana-rsa-verifier"
 readme = "../../README.md"
 keywords = ["solana", "rsa", "no-std", "cryptography"]
