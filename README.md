@@ -32,11 +32,13 @@ Each row is a fixed base and an odd modulus of that width, timed between two `so
 | 1024-bit | 3 | 84,181 | $0.000009 | $0.076 |
 | 1024-bit | 65537 | 716,705 | $0.000080 | $0.65 |
 | 2048-bit | 3 | 285,781 | $0.000032 | $0.26 |
-| 2048-bit | 65537 | exceeds 1,400,000 | | |
+| 2048-bit | 65537 | 2,553,580 | $0.000286 | $2.31 |
 | 3072-bit | 3 | 641,648 | $0.000072 | $0.58 |
 | 3072-bit | 65537 | exceeds 1,400,000 | | |
 | 4096-bit | 3 | 1,107,794 | $0.000124 | $1.00 |
 | 4096-bit | 65537 | exceeds 1,400,000 | | |
+
+The 2048-bit exponent-65537 row raises the test VM budget to 6,000,000 compute units so the operation can finish. A transaction that performs only that exponentiation consumes 2,554,983, which is 1,154,983 past the 1,400,000 transaction limit. The 3072-bit and 4096-bit exponent-65537 rows still stop at that limit, so they have no completed fee.
 
 A full check of a real exponent-3 signature over the message `solana-rsa-verifier`:
 
@@ -51,7 +53,7 @@ A full check of a real exponent-3 signature over the message `solana-rsa-verifie
 
 These are real signatures, so the remainder takes a different path from the patterned rows above. SHA-384 and SHA-512 compare a different digest after that same exponentiation. PSS also runs SHA-256 inside the crate, once for the salt block and once per MGF1 block. The caller's message hash is not included.
 
-The dollar figures use 1,672 micro-lamports per compute unit at the median and 13,500,000 at the 95th percentile, with SOL near $67 on 2026-11-25. The per-signature fee is separate. A row that exceeds 1,400,000 compute units stops at that transaction limit, so it has no completed fee.
+The dollar figures use 1,672 micro-lamports per compute unit at the median and 13,500,000 at the 95th percentile, with SOL near $67 on 2026-11-25. The per-signature fee is separate.
 
 Reproduce the measurement:
 
