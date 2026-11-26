@@ -12,42 +12,46 @@ use solana_signer::Signer;
 use solana_transaction::Transaction;
 
 #[tokio::test]
-async fn measures_2048_exponent_65537_without_the_transaction_cap() {
+async fn measures_exponent_65537_without_the_transaction_cap() {
     let program_id = Pubkey::new_unique();
     let mut test = ProgramTest::default();
     test.prefer_bpf(true);
     test.add_program("spike", program_id, None);
     // The on-chain transaction limit is 1_400_000. This budget exists only so
     // the test can read the full cost of an operation that does not fit.
-    test.set_compute_max_units(6_000_000);
+    test.set_compute_max_units(20_000_000);
     let context = test.start_with_context().await;
-    let transaction = Transaction::new_signed_with_payer(
-        &[Instruction {
-            program_id,
-            accounts: vec![],
-            data: vec![1, 1],
-        }],
-        Some(&context.payer.pubkey()),
-        &[&context.payer],
-        context.last_blockhash,
-    );
-    let result = context
-        .banks_client
-        .process_transaction_with_metadata(transaction)
-        .await
-        .expect("2048-bit e=65537 failed to run");
-    let metadata = result.metadata.expect("metadata");
-    result
-        .result
-        .unwrap_or_else(|error| panic!("2048-bit e=65537 failed: {error:?}"));
-    let return_data = metadata.return_data.expect("return data").data;
-    let cu = u64::from_le_bytes(return_data[..8].try_into().unwrap());
-    let digest = u64::from_le_bytes(return_data[8..].try_into().unwrap());
-    assert_eq!(digest, host_digest(2048, 65537));
-    eprintln!(
-        "2048-bit e=65537: {cu} compute units (transaction consumed {})",
-        metadata.compute_units_consumed
-    );
+
+    for (size, bits) in [(1u8, 2048u32), (2, 3072), (3, 4096)] {
+        let label = format!("{bits}-bit e=65537");
+        let transaction = Transaction::new_signed_with_payer(
+            &[Instruction {
+                program_id,
+                accounts: vec![],
+                data: vec![size, 1],
+            }],
+            Some(&context.payer.pubkey()),
+            &[&context.payer],
+            context.last_blockhash,
+        );
+        let result = context
+            .banks_client
+            .process_transaction_with_metadata(transaction)
+            .await
+            .unwrap_or_else(|error| panic!("{label} failed to run: {error}"));
+        let metadata = result.metadata.expect("metadata");
+        result
+            .result
+            .unwrap_or_else(|error| panic!("{label} failed: {error:?}"));
+        let return_data = metadata.return_data.expect("return data").data;
+        let cu = u64::from_le_bytes(return_data[..8].try_into().unwrap());
+        let digest = u64::from_le_bytes(return_data[8..].try_into().unwrap());
+        assert_eq!(digest, host_digest(bits, 65537), "{label}");
+        eprintln!(
+            "{label}: {cu} compute units (transaction consumed {})",
+            metadata.compute_units_consumed
+        );
+    }
 }
 
 #[tokio::test]

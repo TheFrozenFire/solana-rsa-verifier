@@ -34,11 +34,11 @@ Each row is a fixed base and an odd modulus of that width, timed between two `so
 | 2048-bit | 3 | 285,781 | $0.000032 | $0.26 |
 | 2048-bit | 65537 | 2,553,580 | $0.000286 | $2.31 |
 | 3072-bit | 3 | 641,648 | $0.000072 | $0.58 |
-| 3072-bit | 65537 | exceeds 1,400,000 | | |
+| 3072-bit | 65537 | 5,444,120 | $0.000610 | $4.92 |
 | 4096-bit | 3 | 1,107,794 | $0.000124 | $1.00 |
-| 4096-bit | 65537 | exceeds 1,400,000 | | |
+| 4096-bit | 65537 | 9,418,740 | $0.001055 | $8.52 |
 
-The 2048-bit exponent-65537 row raises the test VM budget to 6,000,000 compute units so the operation can finish. A transaction that performs only that exponentiation consumes 2,554,983, which is 1,154,983 past the 1,400,000 transaction limit. The 3072-bit and 4096-bit exponent-65537 rows still stop at that limit, so they have no completed fee.
+The exponent-65537 rows above 1024 bits raise the test VM budget to 20,000,000 compute units so the operation can finish. A transaction that performs only that exponentiation consumes 2,554,983 at 2048 bits, 5,446,068 at 3072 bits, and 9,421,810 at 4096 bits. Those totals are 1,154,983, 4,046,068, and 8,021,810 past the 1,400,000 transaction limit.
 
 A full check of a real exponent-3 signature over the message `solana-rsa-verifier`:
 
